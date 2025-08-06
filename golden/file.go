@@ -21,6 +21,9 @@ import (
 // files.
 var update = flag.Bool("update", false, "update goldenfiles and templates")
 
+// FILE_TO_DELAY is a delay used to ensure deferred access to files.
+var FILE_IO_DELAY = 10 * time.Millisecond
+
 // FileTests performs golden file tests for all the <.json/csv> files contained
 // in the given location. A golden file test uses an input file to execute a
 // program. The output of the program is compared against an expected output
@@ -69,14 +72,15 @@ func FileTest(t *testing.T, inputPath string, config Config) {
 				t.Fatal(err)
 			}
 
-			if !config.UseStdOut {
-				defer func() {
+			defer func() {
+				if !config.UseStdOut {
+					time.Sleep(FILE_IO_DELAY)
 					err := os.Remove(tempFileName)
-					if err != nil {
+					if err != nil && !os.IsNotExist(err) {
 						panic(err)
 					}
-				}()
-			}
+				}
+			}()
 
 			// Run the actual command.
 			var stdout, stderr bytes.Buffer
@@ -178,8 +182,13 @@ func comparison(
 		}
 
 		flattenedOutput = flatmap.Do(output)
-		flattenedOutput = replaceTransient(flattenedOutput, config.TransientFields...)
-		flattenedOutput, err = roundFields(flattenedOutput, config.OutputProcessConfig.RoundingConfig...)
+		transientFields := config.TransientFields
+		transientFields = append(transientFields, config.OutputProcessConfig.TransientFields...)
+		flattenedOutput, err = replaceTransient(goldenPath, flattenedOutput, transientFields...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		flattenedOutput, err = roundFields(goldenPath, flattenedOutput, config.OutputProcessConfig.RoundingConfig...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -279,19 +288,12 @@ func updateGoldenFile(
 		actualString := string(actualBytes)
 		actualString = regexReplaceAllDefault(actualString)
 		for _, r := range config.OutputProcessConfig.VolatileRegexReplacements {
-			if r.FileRegex != "" {
-				fileName := filepath.Base(goldenPath)
-				if r.FileRegexFullPath {
-					fileName = goldenPath
-				}
-				re, compileErr := regexp.Compile(r.FileRegex)
-				if compileErr != nil {
-					t.Errorf("Invalid regex pattern '%s': %v", r.FileRegex, compileErr)
-					continue
-				}
-				if !re.MatchString(fileName) {
-					continue
-				}
+			skip, err := skipFile(goldenPath, r.FileRegex, r.FileRegexFullPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if skip {
+				continue
 			}
 			actualString = regexReplaceCustom(actualString, r.Replacement, r.Regex)
 		}
@@ -349,7 +351,7 @@ func ValidateAgainstSchema(name string, docBytes, schemaBytes []byte) error {
 }
 
 // valuesAreEqual compares two values and returns an error if they are not.
-// Comparison is done based on a treshold value, which is defined in the
+// Comparison is done based on a threshold value, which is defined in the
 // GoldenConfig.
 func valuesAreEqual(config Config, key string, output, expected any) error {
 	if outputString, isString := output.(string); isString {
@@ -542,4 +544,33 @@ func validForFileComparison(fileInfo os.FileInfo) bool {
 	}
 
 	return true
+}
+
+// skipFile checks whether a file should be skipped based on the provided
+// fileRegex and fileRegexFullPath. The file is skipped if the goldenPath does
+// not match the fileRegex. If the fileRegex is empty though, the file is not
+// skipped (i.e., it is processed / a catch-all).
+func skipFile(
+	goldenPath string,
+	fileRegex string,
+	fileRegexFullPath bool,
+) (bool, error) {
+	if !fileRegexFullPath {
+		goldenPath = filepath.Base(goldenPath)
+	}
+
+	if fileRegex != "" {
+		// Compile the regex and check if it matches the goldenPath.
+		// If it does not match, we skip the file.
+		re, compileErr := regexp.Compile(fileRegex)
+		if compileErr != nil {
+			return false, fmt.Errorf("error compiling regex %q: %w", fileRegex, compileErr)
+		}
+		if !re.MatchString(goldenPath) {
+			return true, nil
+		}
+	}
+
+	// By default, we do not skip files.
+	return false, nil
 }
