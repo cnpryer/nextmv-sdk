@@ -46,11 +46,13 @@ type Config struct {
 	// in nature, such as the elapsed time, version, start time, etc. Transient
 	// fields have a special parsing in the .golden file and they are
 	// stabilized in the comparison.
+	//
+	// Deprecated: Use OutputProcessConfig.TransientFields instead.
 	TransientFields []TransientField
-	// Tresholds by data type to be used when comparing actual and expected.
+	// Thresholds by data type to be used when comparing actual and expected.
 	// This configuration is optional, and if not provided then the comparison
 	// between values is hard equality.
-	Thresholds Tresholds
+	Thresholds Thresholds
 	// When DedicatedComparison is defined, then the golden file test will only
 	// compare the keys that are defined in the slice. The keys are defined as
 	// a [JSONPath]-like key. In general, use a dot (.) to recursively enter
@@ -108,7 +110,6 @@ type TransientField struct {
 	//
 	// [JSONPath]: https://goessner.net/articles/JsonPath/
 	Key string
-
 	// Replacement is optional, and it is the value that is used to stabilize
 	// the transient field. If a replacement is not provided for the key, the
 	// stabilization happens according to the data type. For example, a
@@ -116,12 +117,20 @@ type TransientField struct {
 	// replaced using [StableDuration], etc. You can use the constants provided
 	// by this package to stabilize the transient fields.
 	Replacement any
+	// FileRegex is an optional regex to match the file name. If it is not
+	// empty, the replacement is only applied to files that match the regex.
+	FileRegex string
+	// FileRegexFullPath decides whether the FileRegex should be applied to
+	// the full path of the file or just the file name. If it is true, the
+	// FileRegex is applied to the full path, otherwise it is applied to the
+	// file name only.
+	FileRegexFullPath bool
 }
 
-// Tresholds by data type to be used when comparing actual and expected. If the
+// Thresholds by data type to be used when comparing actual and expected. If the
 // absolute difference between the two values is less than or equal to the
 // given threshold, then we consider the two values to be equal.
-type Tresholds struct {
+type Thresholds struct {
 	// Float is the threshold to be used when comparing floats.
 	Float float64
 	// Int is the threshold to be used when comparing ints.
@@ -165,6 +174,11 @@ type OutputProcessConfig struct {
 	// KeepVolatileData indicates whether to keep or replace frequently
 	// changing data.
 	KeepVolatileData bool
+	// TransientFields are keys that hold values which are transient (dynamic)
+	// in nature, such as the elapsed time, version, start time, etc. Transient
+	// fields have a special parsing in the .golden file and they are
+	// stabilized in the comparison.
+	TransientFields []TransientField
 	// VolatileRegexReplacements defines regex replacements to be applied to the
 	// golden file before comparison.
 	VolatileRegexReplacements []VolatileRegexReplacement
@@ -188,6 +202,14 @@ type RoundingConfig struct {
 	Key string
 	// Precision is the number of decimal places to round to.
 	Precision int
+	// FileRegex is an optional regex to match the file name. If it is not
+	// empty, the rounding is only applied to files that match the regex.
+	FileRegex string
+	// FileRegexFullPath decides whether the FileRegex should be applied to
+	// the full path of the file or just the file name. If it is true, the
+	// FileRegex is applied to the full path, otherwise it is applied to the
+	// file name only.
+	FileRegexFullPath bool
 }
 
 // ExecutionConfig defines the configuration for non-SDK golden file tests.
