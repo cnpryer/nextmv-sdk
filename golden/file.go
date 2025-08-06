@@ -21,6 +21,9 @@ import (
 // files.
 var update = flag.Bool("update", false, "update goldenfiles and templates")
 
+// FILE_TO_DELAY is a delay used to ensure deferred access to files.
+var FILE_IO_DELAY = 10 * time.Millisecond
+
 // FileTests performs golden file tests for all the <.json/csv> files contained
 // in the given location. A golden file test uses an input file to execute a
 // program. The output of the program is compared against an expected output
@@ -71,6 +74,7 @@ func FileTest(t *testing.T, inputPath string, config Config) {
 
 			if !config.UseStdOut {
 				defer func() {
+					time.Sleep(FILE_IO_DELAY)
 					err := os.Remove(tempFileName)
 					if err != nil {
 						panic(err)
